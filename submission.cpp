@@ -10,7 +10,7 @@
 #include <stdlib.h>   
 using namespace std;
 
-#define WATER 0.9514
+#define WATER 0.95143
 
 inline string create_submission_write_to_readme(string MODEL_TYPE, \
     double learning_rate, double regulation, int max_epoch, \
