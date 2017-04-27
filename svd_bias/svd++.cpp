@@ -13,7 +13,7 @@ using namespace std;
 #define NUM_USERS 458293
 #define NUM_MOVIES 17770
 #define ALL_DATA_SIZE 102416306
-#define MODEL_TYPE "SVD_BIAS"
+#define MODEL_TYPE "SVD_++"
 
 // OVERVIEW 
 
@@ -76,6 +76,7 @@ vector<vector<vector<double> > > get_training_data(int PERCENT) {
                 hidden_data.push_back(temp);
             }*/
             else if (id == 4.0) {
+                training_data.push_back(temp);
                 probe_data.push_back(temp);
             }
             else if (id == 5.0) {
@@ -152,180 +153,8 @@ inline double dot_product(double* A, double* B, int size) {
     return tot;
 }
 
-inline double get_err(double** U, double** V, \
-    double** Y, int K, int NUM_POINTS) {
-    double err = 0.0;
-    for (int i = 0; i < NUM_POINTS; i++) {
-        int n = int(Y[i][0]) - 1;
-        int m = int(Y[i][1]) - 1;
-        double rating = Y[i][3];
-        assert (rating <= 5.0);
-        assert (rating >= 1.0);
-        double predicted_rating = dot_product(U[n], V[m], K);
-        if (predicted_rating < 1.0) {
-            predicted_rating = 1.0;
-        }
-        else if (predicted_rating > 5.0) {
-            predicted_rating = 5.0;
-        }
-        err += pow((predicted_rating - rating),2);
-    }
-    return pow(err/double(NUM_POINTS), 0.5);
-}
-
-
-// Takes the biases into account when calculating the error. 
-inline double get_err_w_biases(double** U, double** V, \
-    double** Y, int K, int NUM_POINTS, \
-    double* USER_BIASES, double* MOVIE_BIASES, double average_rating) {
-
-    double err = 0.0;
-    double* point;
-    for (int i = 0; i < NUM_POINTS; i++) {
-        point = Y[i];
-        int n = int(point[0]) - 1;
-        int m = int(point[1]) - 1;
-        double rating = point[3];
-        // assert (rating <= 5.0);
-        // assert (rating >= 1.0);
-        double predicted_rating = dot_product(U[n], V[m], K) + USER_BIASES[n] \
-                                        + MOVIE_BIASES[m] + average_rating;
-        if (predicted_rating < 1.0) {
-            predicted_rating = 1.0;
-        }
-        else if (predicted_rating > 5.0) {
-            predicted_rating = 5.0;
-        }
-        err += pow((predicted_rating - rating),2);
-    }
-    return pow(err/double(NUM_POINTS), 0.5);
-}
-
-
-/* Creates the submission file */
-inline void create_submission(double** U, double** V, \
-    vector<vector<double> > test_set, int K, int NUM_TEST_POINTS, \
-    double* USER_BIASES, double* MOVIE_BIASES, double average_rating, 
-    double learning_rate, double regulation, int max_epochs, double final_eout, \
-    int PERCENT) {
-    vector<double> predicted_values;
-    int n = 0; int m = 0; 
-    double predicted_rating = 0.0;
-    for (int i = 0; i < NUM_TEST_POINTS; i++) {
-        vector<double> point = test_set[i];
-        n = int(point[0]) - 1;
-        m = int(point[1]) - 1;
-        predicted_rating = dot_product(U[n], V[m], K) + USER_BIASES[n] + MOVIE_BIASES[m] + average_rating;
-        if (predicted_rating < 1.0) {
-            predicted_rating = 1.0;
-        }
-        else if (predicted_rating > 5.0) {
-            predicted_rating = 5.0;
-        }
-        predicted_values.push_back(predicted_rating);
-    }
-    assert(predicted_values.size() == NUM_TEST_POINTS);
-    string filename = create_submission_write_to_readme(MODEL_TYPE, learning_rate, regulation, max_epochs, final_eout, predicted_values, PERCENT, K);
-    affirm_size_of_file(NUM_TEST_POINTS, filename);
-}
-
-/*
-inline double get_err_preprocessing(double** Y, int mean, int NUM_POINTS) {
-    double err = 0.0;
-    for (int i = 0; i < NUM_POINTS; i++) {
-        double rating = Y[i][3];
-        assert (rating <= 5.0);
-        assert (rating >= 1.0);
-        double predicted_rating = mean;
-        if (predicted_rating < 1.0) {
-            predicted_rating = 1.0;
-        }
-        else if (predicted_rating > 5.0) {
-            predicted_rating = 5.0;
-        }
-        err += pow((predicted_rating - rating),2);
-    }
-    return pow(err/double(NUM_POINTS), 0.5);
-
-}
-*/
-inline void create_biases(double** TRAINING_DATA, double* USER_BIASES, double* MOVIE_BIASES, \
-    double* user_counting, double* movie_counting, int NUM_POINTS, double average_rating) {
-    int ri = 0;
-    int ru = 0;
-    int lambda_1 = 25;
-    int lambda_2 = 10;
-    double bi = 0.0; 
-    double bu = 0.0;
-    for (int j = 0; j < NUM_POINTS; j++) {
-        movie_counting[int(TRAINING_DATA[j][1] - 1)] += 1;
-        MOVIE_BIASES[int(TRAINING_DATA[j][1] - 1)] += TRAINING_DATA[j][3] - average_rating;
-    }
-
-    for (int i = 0; i < NUM_MOVIES; i++) {
-        ri = movie_counting[i];
-        bi = MOVIE_BIASES[i]/(lambda_1 + ri);
-        MOVIE_BIASES[i] = bi;
-    }
-    for (int j = 0; j < NUM_POINTS; j++) {
-        user_counting[int(TRAINING_DATA[j][0] - 1)] += 1;
-        USER_BIASES[int(TRAINING_DATA[j][0] - 1)] += TRAINING_DATA[j][3] - average_rating - MOVIE_BIASES[int(TRAINING_DATA[j][1] - 1)];
-    }
-    for (int i = 0; i < NUM_USERS; i++) {
-        ru = user_counting[i];
-        bu = USER_BIASES[i]/(lambda_2 + ru);
-        USER_BIASES[i] = bu;
-    }
-    /*
-    for (int i = 0; i < NUM_USERS; i++) {
-        int nu = user_counting[i];
-        if (nu == 0) {
-            theta = 0.0;
-        }
-        else {
-            theta = double(USER_BIASES[i]) / nu;
-        }
-        double cu = (nu * theta) / (nu + alpha);
-
-        USER_BIASES[i] = cu;
-    } */
-
-    /* double average_rating = 0.0;
-    for (int i = 0; i < NUM_POINTS; i++) {
-        average_rating += TRAINING_DATA[i][3];
-    }
-    average_rating /= NUM_POINTS;
-    cout << "average_rating:  " << average_rating << endl;
-    for (int i = 0; i < NUM_POINTS; i++) {
-        MOVIE_BIASES[int(TRAINING_DATA[i][1]) - 1] += TRAINING_DATA[i][3] - average_rating;
-        movie_counting[int(TRAINING_DATA[i][1]) - 1] += 1;
-        USER_BIASES[int(TRAINING_DATA[i][0]) - 1] += TRAINING_DATA[i][3] - average_rating;
-        user_counting[int(TRAINING_DATA[i][0]) - 1] += 1;
-    } 
-    cout << "Done here" << endl;
-    for (int i = 0; i < NUM_MOVIES; i++) {
-        if (movie_counting[i] == 0) {
-            MOVIE_BIASES[i] = 0;
-        }
-        else {
-            MOVIE_BIASES[i] = MOVIE_BIASES[i]/movie_counting[i];
-        }
-    }  
-    for (int j = 0; j < NUM_USERS; j++) {
-        if (user_counting[j] == 0) {
-            USER_BIASES[j] = 0;
-        }
-        else {
-            USER_BIASES[j] = USER_BIASES[j]/user_counting[j];
-        }
-    } 
-    for (int i = 0; i < NUM_POINTS; i++) {
-        int n = int(TRAINING_DATA[i][0]) - 1;
-        int m = int(TRAINING_DATA[i][1]) - 1;
-        TRAINING_DATA[i][3] -= (USER_BIASES[n] + MOVIE_BIASES[m] + average_rating);
-    }
-    */
-}
+inline predicted_rating(double average, double* USER_BIASES, double* MOVIE_BIASES, \
+    double** U, double** V, double** yj)
 
 int main(int argc, char* argv[]) {
     if (argc != 4) {
