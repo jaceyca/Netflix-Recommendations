@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdlib.h>  
 #include "../submission.cpp"
+#include "loading_in_functions.cpp"
 #include <utility> 
 #include <map>
 #include <ctime>
@@ -21,166 +22,163 @@
 using namespace std;
 
 
+
+// GLOBAL VARIABLE DECLARATION. REDUCES A LOT OF FUNCTION OVERHEAD. MAKES 
+// EVERYTHING READABLE. 
+double* USER_BIASES; // 
+double* ALPHAS_USERS;
+double* user_counting;
+double* movie_counting;
+double* C_u;
+double* USER_AVG_TIME;
+double* MOVIE_BIASES;
+double** B_I_BIN;
+double** U;
+double** V; 
+double** Y;
+double** ALPHAS_UK;
+double Beta = 0.4;
+vector<vector<double> > MOVIES_RATED_BY_USERS; 
+map<pair<double, double>, double> b_u_tui;
+map<pair<double, double>, double> c_u_tui;
+int K = 20;
+double** TRAINING_DATA;
+double** VALIDATION_DATA;
+double average_rating = 0.0;
+int NUM_POINTS = 0;
+int NUM_VALIDATION = 0;
+int POINT_WIDTH = 4;
+
+// All learning parameters.
+
+// b_ui paramaters.  
+double l_rate_bu = 0.003;
+double reg_bu = 0.03;
+double l_rate_b_ut = 0.00025;
+double reg_b_ut = 0.005;
+double l_rate_alpha_u = 0.0001;
+double reg_alpha_u = 50;
+double l_rate_bi = 0.002;
+double reg_bi = 0.03;
+double l_rate_b_i_bin = 0.0005;
+double reg_b_i_bin = 0.1;
+double l_rate_c_u = 0.008;
+double reg_c_u = 0.01;
+double l_rate_c_ut = 0.002;
+double reg_c_ut = 0.005;
+
+// vector_prod parameters. 
+double l_rate_v_u_y = 0.008;
+double reg_v_u_y = 0.008;
+double l_rate_alphas_uk = 0.00001;
+double reg_alphas_uk = 50;
+    
+
+
 // The implementation here is based off the Bellkor solution paper, and the 
 // timeSVD++ model. 
 
 
-
-/* Splits each line of all.dta by spaces, then converts it to a double, and
- * finally returns a vector of doubles */ 
-inline std::vector<double> split_by_whitespace(string s) {
-    vector<double> result;
-    istringstream iss(s);
-    for(string s; iss >> s; )
-        result.push_back(std::stod(s));
-    return result;
+// Dot Product
+inline double dot_product(double* A, double* B, int size) {
+    double tot = 0.0;
+    for (int i = 0; i < size; i++) 
+        tot += A[i] * B[i];
+    return tot;
 }
 
-/* Loads all the data into training data. 
- * ____data[i][0] = user id of i^th rating
- * ____data[i][1] = movie id of i^th rating
- * ____data[i][2] = date of i^th rating. See README in um file for details.
- * ____data[i][3] = rating. 1 - 5 is actual rating and 0 means blank. 
- * Now, we have blanks above because there's a bunch of different types of 
- * data. Specifically, we have training_data, validation_data, hidden_data, 
- * probe_data, and qual_data. We will store all of these in a vector, and
- * then return the vector. 
- */
-inline vector<vector<vector<double> > > get_training_data(int PERCENT) {
-    fstream afile; string str; int counter = 0; vector<double> temp;
-    fstream bfile; string identifier; double id; 
-    vector<vector<double> > training_data;
-    vector<vector<double> > validation_data;
-    vector<vector<double> > hidden_data;
-    vector<vector<double> > probe_data;
-    vector<vector<double> > qual_data;
-    afile.open("../../mu/all.dta", ios::out | ios::in); 
-    bfile.open("../../mu/all.idx", ios::out | ios::in); 
-    if (PERCENT == 100) {
-        int one_percent = ALL_DATA_SIZE/100;
-        while ((std::getline(afile, str)) && \
-            (std::getline(bfile, identifier)))  {
-            temp = split_by_whitespace(str);
-            id = stod(identifier);
-            if (temp[3] == 0) {
-                assert (id == 5);
-            }
-            if (id <= 3.0) {
-                training_data.push_back(temp);
-            }
-            /*
-            else if (id == 2.0) {
-                validation_data.push_back(temp);
-            }
-            else if (id == 3.0) {
-                hidden_data.push_back(temp);
-            }*/
-            else if (id == 4.0) {
-                probe_data.push_back(temp);
-            }
-            else if (id == 5.0) {
-                qual_data.push_back(temp);
-            }
-            else {
-                assert (false);
-            }
-            assert (temp.size() == 4);
-            counter += 1;
-            if (counter % one_percent == 0) {
-                // cout << counter << endl;
-                cout.flush();
-                cout << "\r" << "LOADING IN DATA:  " << counter/one_percent \
-                    << " PERCENT COMPLETED" ;
-            }
-        }
-    }
-    else {
-        int stop_at = int(double(ALL_DATA_SIZE * PERCENT)/100);
-        int one_percent = stop_at/100;
-        while (((std::getline(afile, str)) && \
-            (std::getline(bfile, identifier))) && (counter < stop_at))  {
-            temp = split_by_whitespace(str);
-            id = stod(identifier);
-            if (temp[3] == 0) {
-                assert (id == 5);
-            }
-            if (id <= 3.0) {
-                training_data.push_back(temp);
-            }/*
-            else if (id == 2.0) {
-                validation_data.push_back(temp);
-            }
-            else if (id == 3.0) {
-                hidden_data.push_back(temp);
-            }*/
-            else if (id == 4.0) {
-                probe_data.push_back(temp);
-            }
-            else if (id == 5.0) {
-                qual_data.push_back(temp);
-            }
-            else {
-                assert (false);
-            }
-            assert (temp.size() == 4);
-            counter += 1;
-            if (counter % one_percent == 0) {
-                // cout << counter << endl;
-                cout.flush();
-                cout << "\r" << "LOADING IN DATA:  " << counter/one_percent \
-                    << " PERCENT COMPLETED" ;
-            }
-        }
-    }
-    printf("\n");
-    afile.close();
-    bfile.close();
-    vector<vector<vector<double> > > all_data;
-    all_data.push_back(training_data);
-    all_data.push_back(validation_data);
-    all_data.push_back(hidden_data);
-    all_data.push_back(probe_data);
-    all_data.push_back(qual_data);
-    return all_data; 
-}
 
 // Calculates time deviation.
-inline double calc_dev_u(double t, double Beta, double user_avg_time) {
+inline double calc_dev_u(double t, double user_avg_time) {
     double sub = t - user_avg_time;
     return (sub > 0) ? pow(sub, Beta) : (-1 * pow(-1 * sub, Beta));
 }
 
 
 // Calculates bin_number_of time
-inline int calc_bin(double t, int num_bins, int max_days) {
-    return int(t/(max_days/num_bins));
+inline int calc_bin(double t) {
+    return int(t/(MAX_DAYS/NUM_BINS));
 } 
 
 // The user and movie number for this function WONT be the user number, and 
 // movie number, but rather the indexes, so MAKE sure you subtract 1 from this.
-inline double calc_bui(int user, int movie, double t, double average, 
-    double* user_biases, double* alpha, double* user_rating_time, double Beta, 
-    map<pair<double, double>, double> &b_ut, double* item_bias, 
-    double** item_bin, map<pair<double, double>, double> &c_u_t, double* 
-    cu) {
+inline double calc_bui(int user, int movie, double t) {
     // Verify that we're 1 indexed. 
     if (user == 458293 || movie == 17770) {
         assert (false);
     }
-    double dev_u_tui = calc_dev_u(t, Beta, user_rating_time[user]);
-    int bin_no = calc_bin(t, NUM_BINS, MAX_DAYS);
-    double b_i_bin_tui = item_bin[movie][bin_no];
-    double c_u_tui = c_u_t[make_pair(double(user), double(t))] + cu[user];
-    double b_u_tui = b_ut[make_pair(double(user), double(t))];
+    double dev_u_tui = calc_dev_u(t, USER_AVG_TIME[user]);
+    int bin_no = calc_bin(t);
+    double b_i_bin_tui = B_I_BIN[movie][bin_no];
+    double c_u_part_2 = C_u[user];
+    double c_u_part_1 = 1.0;
+    double pot = c_u_tui[make_pair(double(user), double(t))];
+    if (pot != 0) {
+        c_u_part_1 = pot;
+    }
+    double c_u_scale = c_u_part_1 + c_u_part_2;
+    double b_u_day_bias = b_u_tui[make_pair(double(user), double(t))];
 
-    double b_ui = average + user_biases[user] + alpha[user] * dev_u_tui + \
-        b_u_tui + (item_bias[movie] + b_i_bin_tui) * c_u_tui;
+    double b_ui = average_rating + USER_BIASES[user] + 
+        ALPHAS_USERS[user] * dev_u_tui + b_u_day_bias + (MOVIE_BIASES[movie] + 
+        b_i_bin_tui) * c_u_scale;
     return b_ui;
 }
 
-inline double predict_rating(double avg, double* item_bias, double* user_bias, 
-    double** U, double** V) {
-    return 1.0; 
+inline double calc_inner_vector_product(int user, int movie, double t) {
+    double tot = 0.0;
+    double* temp = V[movie];
+    for (int i = 0; i < K; i++) {
+        double second_v = U[user][i] + ALPHAS_UK[user][i] * 
+            calc_dev_u(t, USER_AVG_TIME[user]);
+        int num_movies_rated = MOVIES_RATED_BY_USERS[user].size();
+        double second_tot = 0.0;
+        for (int j = 0; j < num_movies_rated; j++) {
+            second_tot += Y[int(MOVIES_RATED_BY_USERS[user][j])][i];
+        }
+        assert (!(isnan(second_v)));
+        if (num_movies_rated == 0) {
+            second_tot *= 0;
+        }
+        else {
+            second_tot *= pow(num_movies_rated, -0.5);
+        }
+        assert (!(isnan(second_tot)));
+        assert(!(isnan(temp[i])));
+        tot += temp[i] * (second_tot + second_v);
+    }
+    return tot;
+
+}
+
+inline double predict_rating(int user, int movie, double t) {
+    double prod = calc_inner_vector_product(user, movie, t);
+    double bui = calc_bui(user, movie, t);
+    assert (!(isnan(prod)));
+    assert (!(isnan(bui)));
+    if (prod + bui < 1) {
+        return 1;
+    }
+    else if (prod + bui > 5) {
+        return 5;
+    } 
+    return prod + bui; 
+}
+
+inline double get_err_val() {
+    double err = 0.0;
+    double r = 0.0;
+    double p_r = 0.0;
+    for (int i = 0; i < NUM_VALIDATION; i++) {
+        double* temp = VALIDATION_DATA[i];
+        int u = int(temp[0] - 1);
+        int i_m = int(temp[1] - 1);
+        int t = int(temp[2] - 1);
+        r = int(temp[3] - 1);
+        p_r = predict_rating(u, i_m, t); 
+        err += pow(p_r - r, 2);
+    }
+    return pow(err/double(NUM_VALIDATION), 0.5);
 }
 
 
@@ -210,12 +208,12 @@ inline void initialize_rand_2d(double** arr, int size_d1, int size_d2) {
     }
 }
 
-inline void initialize_avg_time(double** TRAINING_DATA, \
-    double* USER_AVG_TIME, double* user_counting, int training_size) {
+inline void initialize_avg_time() {
     double* temp = 0;
     int u = 0;
     double t_uj = 0.0;
-    for (int i = 0; i < training_size; i++) {
+    initialize_zeros_1d(user_counting, NUM_USERS);
+    for (int i = 0; i < NUM_POINTS; i++) {
         temp = TRAINING_DATA[i];
         u = int(temp[0] - 1);
         t_uj = temp[2];
@@ -230,30 +228,45 @@ inline void initialize_avg_time(double** TRAINING_DATA, \
             USER_AVG_TIME[i] = 0;
         }
     }
-    initialize_zeros_1d(user_counting, NUM_USERS);
 
 }
-inline void initialize_b_ut_map(map<pair<double, double>, double> &m, \
-    double** TRAINING_DATA, int size) {
+inline void initialize_maps() {
     double u = 0.0;
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < NUM_POINTS; i++) {
         double* temp = TRAINING_DATA[i];
         u = temp[0] - 1;
         double t_uj = temp[2];
-        m[make_pair(u, t_uj)] = 0.0;
+        b_u_tui[make_pair(u, t_uj)] = 0.0;
+        c_u_tui[make_pair(u, t_uj)] = 1.0;
     }
 }
 
-inline void initialize_c_ut_map(map<pair<double, double>, double> &m, \
-    double** TRAINING_DATA, int size) {
-    double u = 0.0;
-    for (int i = 0; i < size; i++) {
-        double* temp = TRAINING_DATA[i];
-        u = temp[0] - 1;
-        double t_uj = temp[2];
-        m[make_pair(u, t_uj)] = 1.0;
-    }
+
+inline void gradient_updates(int user, int movie, double t, double r) {
+    double e = r - predict_rating(user, movie, t);
+    USER_BIASES[user] = USER_BIASES[user] + 
+        l_rate_bu * (e - reg_bu * USER_BIASES[u]);
+    MOVIE_BIASES[movie] = MOVIE_BIASES[movie] + 
+        l_rate_bi * (e - reg_bi * MOVIE_BIASES[movie]);
+    double* user_counting;
+    double* movie_counting;
+    double* C_u;
+    double* USER_AVG_TIME;
+    double* MOVIE_BIASES;
+    double** B_I_BIN;
+    double** U;
+    double** V; 
+    double** Y;
+    double** ALPHAS_UK;
+    double Beta = 0.4;
+    vector<vector<double> > MOVIES_RATED_BY_USERS; 
+    map<pair<double, double>, double> b_u_tui;
+    map<pair<double, double>, double> c_u_tui;
+
+
+
 }
+
 
 int main(int argc, char* argv[]) {
     // THERE'S GONNA BE A SHIT TON OF PREPROCESSING. LIKE A LOT. HOLD ON IT'S 
@@ -263,19 +276,23 @@ int main(int argc, char* argv[]) {
         cout << "usage: ./FILENAME   (N Percent Of Data)" << endl;
         return 0;
     }
+    int PERCENT = stoi((argv[1]));
+
+    cout << PERCENT << endl;
 
     // Allocate all appropriate memory. 
-    int PERCENT = stoi((argv[1]));
-    double* USER_BIASES = new double [NUM_USERS];
-    double* ALPHAS_USERS = new double [NUM_USERS];
-    double* user_counting = new double [NUM_USERS];
-    double* movie_counting = new double [NUM_MOVIES];
-    double* C_u = new double [NUM_USERS];
-    double* USER_AVG_TIME = new double [NUM_USERS];
-    double* MOVIE_BIASES = new double [NUM_MOVIES];
-    double** B_I_BIN = new double* [NUM_MOVIES];
-    map<pair<double, double>, double> b_u_tui;
-    map<pair<double, double>, double> c_u_tui;
+    USER_BIASES = new double [NUM_USERS];
+    ALPHAS_USERS = new double [NUM_USERS];
+    user_counting = new double [NUM_USERS];
+    movie_counting = new double [NUM_MOVIES];
+    C_u = new double [NUM_USERS];
+    USER_AVG_TIME = new double [NUM_USERS];
+    MOVIE_BIASES = new double [NUM_MOVIES];
+    B_I_BIN = new double* [NUM_MOVIES];
+    Beta = 0.4;
+    // vector<vector<double> > MOVIES_RATED_BY_USERS; 
+    // map<pair<double, double>, double> b_u_tui;
+    // map<pair<double, double>, double> c_u_tui;
     for (int i = 0; i < NUM_MOVIES; i++) {
         B_I_BIN[i] = new double[NUM_BINS];
     }
@@ -284,6 +301,7 @@ int main(int argc, char* argv[]) {
     initialize_rand_1d(USER_BIASES, NUM_USERS);
     initialize_rand_1d(ALPHAS_USERS, NUM_USERS);
     initialize_zeros_1d(USER_AVG_TIME, NUM_USERS);
+    initialize_zeros_1d(user_counting, NUM_USERS);
     initialize_rand_1d(MOVIE_BIASES, NUM_MOVIES);
     initialize_rand_2d(B_I_BIN, NUM_MOVIES, NUM_BINS);
     initialize_ones_1d(C_u, NUM_USERS);
@@ -294,27 +312,38 @@ int main(int argc, char* argv[]) {
     vector<vector<double> > validation_data = full_data[3];
     vector<vector<double> > qual_data = full_data[4];
 
-    int NUM_POINTS = training_data.size();
-    int POINT_WIDTH = training_data[0].size();
-    int NUM_VALIDATION = validation_data.size();
+    NUM_POINTS = training_data.size();
+    POINT_WIDTH = training_data[0].size();
+    NUM_VALIDATION = validation_data.size();
     cout << "VALIDATON SET SIZE:   " << NUM_VALIDATION << endl;
     cout << "TEST SET SIZE:   " << qual_data.size() << endl;
     if (PERCENT == 100) {
         assert (qual_data.size() == 2749898);
     }
+
+
+    // Setting up MOVIES_RATED_BY_USERS 2D vector. 
+    for (int i = 0; i < NUM_USERS; i++) {
+        vector<double> temp; 
+        MOVIES_RATED_BY_USERS.push_back(temp);
+    }
+
     // Setting up training data. 
-    double** TRAINING_DATA = new double* [NUM_POINTS];
+    TRAINING_DATA = new double* [NUM_POINTS];
     for (int i = 0; i < NUM_POINTS; i++) {
         TRAINING_DATA[i] = new double[POINT_WIDTH];
     }
+
+    // Setting up movies rated by users as well. 
     for (int i = 0; i < NUM_POINTS; i++) {
+        vector<double> temp = training_data[i];
+        MOVIES_RATED_BY_USERS[int(temp[0] - 1)].push_back(int(temp[1] - 1));
         for (int j = 0; j < POINT_WIDTH; j++) {
             TRAINING_DATA[i][j] = training_data[i][j]; 
         }
     }
-
     // Setting up validation data. 
-    double** VALIDATION_DATA = new double* [NUM_VALIDATION];
+    VALIDATION_DATA = new double* [NUM_VALIDATION];
     for (int i = 0; i < NUM_VALIDATION; i++) {
         VALIDATION_DATA[i] = new double[POINT_WIDTH];
     }
@@ -323,7 +352,7 @@ int main(int argc, char* argv[]) {
             VALIDATION_DATA[i][j] = validation_data[i][j]; 
         }
     }
-    double average_rating = 0.0;
+    average_rating = 0.0;
     for (int i = 0; i < NUM_POINTS; i++) {
         average_rating += TRAINING_DATA[i][3];
     }
@@ -331,32 +360,42 @@ int main(int argc, char* argv[]) {
     cout << "average_rating: " << average_rating << endl;
 
     cout << "Initializing Average Rating Time User Vector:  " << endl;
-    initialize_avg_time(TRAINING_DATA, USER_AVG_TIME, user_counting, NUM_POINTS);
-    cout << "Initializing User Day Specific Bias Map:  " << endl;
-    initialize_b_ut_map(b_u_tui, TRAINING_DATA, NUM_POINTS);
-    cout << "Initializing User Specific Scaling Factor:   " << endl;
-    initialize_c_ut_map(c_u_tui, TRAINING_DATA, NUM_POINTS);
+    initialize_avg_time();
+    cout << "Initializing Day Specific Maps:  " << endl;
+    initialize_maps();
     clock_t end = clock();
-    cout << "TOTAL INITIALIZATION TIME:  " << \
-        double(end - begin)/CLOCKS_PER_SEC << endl; 
+    cout << "TOTAL INITIALIZATION TIME:  "  
+        << double(end - begin)/CLOCKS_PER_SEC << endl; 
 
 
-    int M = NUM_USERS;
-    int N = NUM_POINTS;
-    int K = 20;
-    int max_epochs = 250;
-    double eps = 0.00000000000001;
+    // int M = NUM_USERS;
+    // int N = NUM_POINTS;
+    // int K = 20;
+    // int max_epochs = 2;
+    // double eps = 0.00000000000001;
 
     // Set up U matrix. 
-    double** U = new double* [NUM_USERS];
+    U = new double* [NUM_USERS];
     for (int i = 0; i < NUM_USERS; i++) {
         U[i] = new double[K];
     }
 
     // Set up V matrix. 
-    double** V = new double* [NUM_MOVIES];
+    V = new double* [NUM_MOVIES];
     for (int i = 0; i < NUM_MOVIES; i++) {
         V[i] = new double[K];
+    }
+
+    // Set up Y matrix. 
+    Y = new double* [NUM_MOVIES];
+    for (int i = 0; i < NUM_MOVIES; i++) {
+        Y[i] = new double[K];
+    }
+
+    // Set up Alpha_uk matrix. 
+    ALPHAS_UK = new double* [NUM_USERS];
+    for (int i = 0; i < NUM_USERS; i++) {
+        ALPHAS_UK[i] = new double[K];
     }
 
     // Fill U in with random doubles. 
@@ -373,8 +412,25 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Free everything. 
+    // Fill Y in with random doubles. 
+    for (int i = 0; i < NUM_MOVIES; i++) {
+        for (int j = 0; j < K; j++ ) {
+            Y[i][j] = double((rand() % 1000) + 1)/1000 - 0.5;
+        }
+    }
 
+    // Fill Alphas_uk in with random doubles. 
+    for (int i = 0; i < NUM_USERS; i++) {
+        for (int j = 0; j < K; j++) {
+            ALPHAS_UK[i][j] = double((rand() % 1000) + 1)/1000 - 0.5;
+        }
+    }
+    assert(!(isnan(V[1][19])));
+
+    cout << "Validation Error: " << get_err_val() << endl;
+
+
+    // Free everything. 
     free(C_u);
     free(USER_BIASES);
     free(ALPHAS_USERS);
@@ -402,7 +458,13 @@ int main(int argc, char* argv[]) {
         free(V[i]);
     }
     free(V);
-
-
+    for (int i = 0; i < NUM_MOVIES; i++) {
+        free(Y[i]);
+    }
+    free(Y);
+    for (int i = 0; i < NUM_MOVIES; i++) {
+        free(ALPHAS_UK[i]);
+    }
+    free(ALPHAS_UK);
 
 }
