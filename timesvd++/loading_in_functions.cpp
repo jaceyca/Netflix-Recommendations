@@ -14,7 +14,6 @@ using namespace std;
 #define ALL_DATA_SIZE 102416306
 #define MODEL_TYPE "TIME_SVD++"
 #define NUM_BINS 30
-#define MAX_DAYS 100
 
 
 
